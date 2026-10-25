@@ -1,0 +1,139 @@
+---
+format:
+  html
+
+execute:
+    echo: false
+    message: false
+    warning: false
+
+---
+```{r}
+#| warning: false
+#| label: setup
+
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+read_mfg_results <- function(filename) {
+  res_long <- readLines(file.path('results', filename))
+  # cat 1/2 men have the most laps, use their header for the whole df
+  cat1_ind <- grep('Cat 1/2 Male', res_long)[1]
+  header_line <- res_long[cat1_ind + 1] |>
+    stringr::str_remove_all('\\% ')
+  # Get read of separator rows and header rows
+  res_only <- res_long[!grepl('(^\\t\\t)|(^Place)', res_long)]
+  # Put it back together
+  res_short <- c(header_line, res_only)
+  out <- read.delim(text = res_short, sep = '\t')
+  return(tibble(out))
+}
+
+files <- list.files(path = 'results')
+race_names <- stringr::str_extract(files, '^.+(?= - )')
+names(files) <- race_names
+results <- purrr::map(files, read_mfg_results) |>
+  bind_rows(.id = 'race')
+
+results_clean <- results |>
+  filter(!(Time %in% c('DNF', 'DNS'))) |>
+  mutate(
+    across(Difference:Back, ~ stringr::str_remove(., '\\+')),
+    across(Lap.1:Difference, .fns = ms),
+    Time = round(
+      seconds_to_period(ifelse(
+        stringr::str_count(Time, ':') == 2,
+        period_to_seconds(hms(Time)),
+        period_to_seconds(ms(Time))
+      )),
+      1
+    ),
+    # eliminate % sign, convert to unit interval
+    across(Back:Median, ~ as.numeric(stringr::str_remove(., '\\%')) / 100)
+  )
+# pretty sure warnings are "-1 lap" in the Time
+
+sandbag_results <- results_clean |>
+  mutate(
+    lap_time_avg = rowMeans(
+      across(Lap.2:Lap.8, lubridate::period_to_seconds),
+      na.rm = TRUE
+    )
+  ) |>
+  relocate(Laps, .after = lap_time_avg) |>
+  filter(
+    grepl('Female', Category),
+    grepl('Cat', Category),
+    !grepl('\\+|(Colleg)', Category)
+  ) |>
+  group_by(race) |>
+  arrange(lap_time_avg, .by_group = TRUE) |>
+  mutate(
+    # sandbag1 counts the number of people in higher categories than you
+    # with slower average lap times
+    sandbag1 = case_when(
+      grepl('3', Category) ~ sum(grepl('1', Category)) -
+        cumsum(grepl('1', Category)),
+      grepl('4', Category) ~ sum(
+        grepl('1|3', Category)
+      ) -
+        cumsum(grepl('1|3', Category)),
+      TRUE ~ NA
+    )
+  ) |>
+  ungroup()
+```
+
+# MFG Women's Cyclocross Sandbagging
+```{r}
+#| label: avg-over-series
+# this calculates who is consistently riding as fast as higher categories
+sandbag_results |>
+  group_by(Name) |>
+  summarise(
+    avg_sandbag = round(mean(sandbag1), 2),
+    Category = first(Category),
+    n_race = n(),
+    Team = first(Team.name),
+    Age = first(Age)
+  ) |>
+  filter(
+    grepl(3, Category) | avg_sandbag >= 3,
+    avg_sandbag > 1,
+    avg_sandbag < 10
+  ) |>
+  group_by(Category) |>
+  arrange(desc(avg_sandbag), .by_group = TRUE) |>
+  knitr::kable()
+```
+
+```{r}
+#| label: by-race
+#| results: asis
+
+# this calculates sandbaggers by race
+
+cat("::: {.panel-tabset}\n\n")
+
+sandbag_results |>
+  slice_max(order_by = sandbag1, n = 5, by = race) |>
+  select(-(Time:Lap.9), -Laps) |>
+  group_by(race) %>%
+  group_walk(
+    ~ {
+      # Create the tab header. .y is a 1-row df with grouping info
+      cat(sprintf("### %s\n\n", .y$race))
+
+      # .x contains the filtered data slice for this group
+      tbl <- knitr::kable(.x, format = 'markdown')
+      cat(tbl, sep = "\n")
+
+      cat("\n\n")
+    }
+  )
+
+# Close the container
+cat(":::\n")
+
+```
