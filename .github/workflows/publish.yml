@@ -29,7 +29,11 @@ jobs:
           packages: |
             any::knitr
             any::rmarkdown
-            any::tidyverse
+            any::dplyr
+            any::ggplot2
+            any::lubridate
+            any::stringr
+            any::purrr
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
