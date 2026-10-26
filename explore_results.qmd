@@ -93,6 +93,7 @@ This counts the number of racers in more competitive categories with average lap
 ## Average over full MFG series
 
 This is a list of people who, on average, have faster lap times than:
+
 - Category 3: at least one category 1/2 competitor (average > 1)
 - Category 4: at least three category 1/2/3 competitors (average >= 3)
 ```{r}
@@ -125,27 +126,13 @@ This calculates the top 5 sandbaggers per race, as defined above. If there is a 
 #| results: asis
 
 # this calculates sandbaggers by race
-
-cat("::: {.panel-tabset}\n\n")
-
 sandbag_results |>
   slice_max(order_by = sandbag1, n = 5, by = race) |>
   select(-(Time:Lap.9), -Laps, -Gender) |>
-  group_by(race) %>%
-  group_walk(
-    ~ {
-      # Create the tab header. .y is a 1-row df with grouping info
-      cat(sprintf("### %s\n\n", .y$race))
-
-      # .x contains the filtered data slice for this group
-      tbl <- knitr::kable(.x, format = 'markdown')
-      cat(tbl, sep = "\n")
-
-      cat("\n\n")
-    }
-  )
-
-# Close the container
-cat(":::\n")
+  tidyr::nest(data = -race) |>
+  # 2. Convert each nested data frame into a markdown table
+  mutate(tbl = purrr::map(data, \(df) knitr::kable(df, format = "markdown"))) |>
+  # 3. Pass the grouping column and the table column to render_tabset
+  quartabs::render_tabset(tabset_vars = race, output_vars = tbl)
 
 ```
