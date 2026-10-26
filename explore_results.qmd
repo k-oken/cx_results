@@ -125,14 +125,14 @@ This calculates the top 5 sandbaggers per race, as defined above. If there is a 
 #| label: by-race
 #| results: asis
 
+cat("\n\n")
+
 # this calculates sandbaggers by race
 sandbag_results |>
   slice_max(order_by = sandbag1, n = 5, by = race) |>
   select(-(Time:Lap.9), -Laps, -Gender) |>
   tidyr::nest(data = -race) |>
-  # 2. Convert each nested data frame into a markdown table
   mutate(tbl = purrr::map(data, \(df) knitr::kable(df, format = "markdown"))) |>
-  # 3. Pass the grouping column and the table column to render_tabset
   quartabs::render_tabset(tabset_vars = race, output_vars = tbl)
 
 ```
