@@ -63,11 +63,10 @@ sandbag_results <- results_clean |>
   ) |>
   relocate(Laps, .after = lap_time_avg) |>
   filter(
-    grepl('Female', Category),
     grepl('Cat', Category),
     !grepl('\\+|(Colleg)', Category)
   ) |>
-  group_by(race) |>
+  group_by(race, Gender) |>
   arrange(lap_time_avg, .by_group = TRUE) |>
   mutate(
     # sandbag1 counts the number of people in higher categories than you
@@ -83,23 +82,41 @@ sandbag_results <- results_clean |>
     )
   ) |>
   ungroup() |>
-  filter(as.numeric(Lap.1) < 900) # someone messed up their timing chip
+  filter(as.numeric(Lap.1) < 900, as.numeric(Lap.2) < 1000) # dealing with outliers
+
+sandbag_results_women <- sandbag_results |>
+  filter(grepl('Female', Category))
 ```
 
 # MFG Women's Cyclocross Sandbagging
 
-This counts the number of racers in more competitive categories with average lap times slower than a given racer.
+First we can visualize that there is not a large difference between category 3 and 4 for women, whereas the men generally have more clear differentiation.
+
+```{r}
+sandbag_results |>
+  mutate(
+    Category = stringr::str_remove(Category, '(?<=[:digit:])( [:alpha:]+$)')
+  ) |>
+  ggplot() +
+  geom_histogram(aes(x = lap_time_avg, fill = Category)) +
+  facet_grid(Gender ~ race, scales = 'free') +
+  theme_bw() +
+  scale_fill_viridis_d() +
+  xlab('Average lap time (s)')
+```
+
+Now we will calculate a sandbagging index which counts the number of racers in more competitive categories with average lap times slower than a given racer.
 
 ## Average over full MFG series
 
-This is a list of people who, on average, have faster lap times than:
+This is a list of females who, on average, have faster lap times than:
 
 - Category 3: at least one category 1/2 competitor (average > 1)
 - Category 4: at least three category 1/2/3 competitors (average >= 3)
 ```{r}
 #| label: avg-over-series
 # this calculates who is consistently riding as fast as higher categories
-sandbag_results |>
+sandbag_results_women |>
   group_by(Name) |>
   summarise(
     avg_sandbag = round(mean(sandbag1), 2),
@@ -120,7 +137,7 @@ sandbag_results |>
 
 ## By race
 
-This calculates the top 5 sandbaggers per race, as defined above. If there is a tie there will be more than 5 people. Category 3 and 4 are combined.
+This calculates the top 5 female sandbaggers per race, as defined above. If there is a tie there will be more than 5 people. Category 3 and 4 are combined.
 ```{r}
 #| label: by-race
 #| results: asis
@@ -128,7 +145,7 @@ This calculates the top 5 sandbaggers per race, as defined above. If there is a 
 cat("\n\n")
 
 # this calculates sandbaggers by race
-sandbag_results |>
+sandbag_results_women |>
   slice_max(order_by = sandbag1, n = 5, by = race) |>
   select(-(Time:Lap.9), -Laps, -Gender) |>
   tidyr::nest(data = -race) |>
